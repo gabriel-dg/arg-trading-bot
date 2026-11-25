@@ -1,0 +1,5 @@
+{
+  "name": "05_risk",
+  "risk_per_trade": 0.01,
+  "include_unrealized_loss": true
+}

@@ -1,0 +1,38 @@
+{
+  "schema_version": 3,
+  "events": {
+    "event_entries": false,
+    "event_exits": false
+  },
+  "limits": {
+    "max_position_pct": 15,
+    "max_positions": 4,
+    "max_invested_pct": 80,
+    "daily_loss_pct": 2,
+    "include_unrealized_loss": false
+  },
+  "schedule": {
+    "mode": "windows",
+    "entry_times": ["11:45", "14:00", "16:00"],
+    "interval_minutes": null,
+    "interval_start": "10:45",
+    "entry_cutoff": "16:20"
+  },
+  "exits": {
+    "stop_atr": 2.5,
+    "trail_atr": 3.0,
+    "grace_sessions": 2,
+    "giveback_pct": 10,
+    "lock_threshold_pct": 5,
+    "lock_fraction_pct": 40,
+    "stop_confirmations": 3,
+    "emergency_first_touch": false
+  },
+  "execution": {
+    "passive_buy": true,
+    "adaptive_buy": false,
+    "buy_timeout_min": 45,
+    "sell_timeout_min": 15,
+    "cooldown_min": 60
+  }
+}

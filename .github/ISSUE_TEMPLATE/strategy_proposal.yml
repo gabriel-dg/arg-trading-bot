@@ -1,0 +1,41 @@
+name: Strategy proposal
+description: Propose a strategy, a rule or a new parameter
+labels: [strategy]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Ideas are welcome, but nothing here is financial advice. Please describe a testable hypothesis, not a promise of returns.
+  - type: textarea
+    id: hypothesis
+    attributes:
+      label: Hypothesis
+      description: What market behavior do you expect, and why?
+    validations:
+      required: true
+  - type: textarea
+    id: rules
+    attributes:
+      label: Rules
+      description: Entry, exit, sizing and risk rules, with the parameters you would expose.
+    validations:
+      required: true
+  - type: textarea
+    id: market
+    attributes:
+      label: Argentine market constraints
+      description: Trading hours, settlement (CI / 24 h), fees, lots, liquidity, CEDEAR specifics.
+  - type: textarea
+    id: validation
+    attributes:
+      label: How to validate it
+      description: Data needed, out-of-sample plan, and what result would reject the idea.
+    validations:
+      required: true
+  - type: checkboxes
+    id: privacy
+    attributes:
+      label: Privacy
+      options:
+        - label: This proposal contains no account data, credentials or personal results.
+          required: true

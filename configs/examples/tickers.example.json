@@ -1,0 +1,5 @@
+{
+  "_note": "Illustrative list of BYMA symbols, for configuring your own universe. Not the author's universe, not a recommendation, and not checked for current liquidity. Verify each symbol, its lot size and its CEDEAR ratio with your broker before use. Tests never use this file.",
+  "local_stocks": ["HARG", "MIRG", "MOLI", "AGRO", "LEDE", "BHIP"],
+  "cedears": ["AAPL", "MSFT", "KO", "MELI", "TSLA"]
+}

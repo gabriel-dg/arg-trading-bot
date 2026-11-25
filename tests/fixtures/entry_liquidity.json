@@ -1,0 +1,6 @@
+{
+  "entry_liquidity": {
+    "since": "10:30",
+    "min_trades_per_minute": 1.5
+  }
+}

@@ -1,0 +1,56 @@
+# Secrets: never commit
+.env
+.env.*
+!.env.example
+*.pem
+*.key
+*.p12
+*token*.json
+.iol_token.json
+secrets/
+credentials*
+
+# Your own configs and data (keep only the examples)
+configs/local/
+configs/*.local.json
+data/
+runs/
+state/
+logs/
+*.log
+*.csv
+!examples/*.csv
+*.db
+*.sqlite
+*.sqlite3
+execution-state.json
+clock.json
+.halt
+.stop
+paper-*/
+ci-paper/
+
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+.pytest_cache/
+.ruff_cache/
+.mypy_cache/
+.coverage
+htmlcov/
+build/
+dist/
+
+# Environments and tools
+.venv/
+venv/
+env/
+.vscode/
+.idea/
+.claude/
+.cursor/
+.local/
+*.swp
+.DS_Store
+Thumbs.db

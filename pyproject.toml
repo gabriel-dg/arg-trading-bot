@@ -1,0 +1,51 @@
+[project]
+name = "arg-trading-bot"
+version = "0.1.0"
+description = "Educational, broker-agnostic trading bot for the Argentine market (BYMA stocks and CEDEARs), paper trading by default"
+readme = "README.md"
+license = {text = "MIT"}
+authors = [{name = "Gabriel de Giuli"}]
+requires-python = ">=3.10"
+dependencies = [
+    "httpx>=0.27,<1",
+    "tzdata>=2024.1",
+]
+classifiers = [
+    "Programming Language :: Python :: 3",
+    "License :: OSI Approved :: MIT License",
+    "Topic :: Office/Business :: Financial :: Investment",
+]
+
+[project.optional-dependencies]
+dev = [
+    "pytest>=8.0,<10",
+    "ruff>=0.6",
+]
+
+[project.scripts]
+argbot = "argbot.cli:main"
+
+[project.urls]
+Homepage = "https://github.com/gabriel-dg/arg-trading-bot"
+Issues = "https://github.com/gabriel-dg/arg-trading-bot/issues"
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+
+[tool.ruff]
+line-length = 130
+target-version = "py310"
+
+[tool.ruff.lint]
+select = ["E9", "F"]
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.hatch.build.targets.wheel]
+packages = ["argbot"]
+
+[tool.ruff.lint.per-file-ignores]
+# pytest fixtures imported from another test module look unused or redefined
+"tests/*" = ["F401", "F811", "F841"]

@@ -1,0 +1,6 @@
+{
+  "stale_trade_valuation": {
+    "max_trade_age_seconds": 18000,
+    "before_first_trade": "previous_close"
+  }
+}

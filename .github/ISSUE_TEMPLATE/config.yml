@@ -1,0 +1,8 @@
+blank_issues_enabled: false
+contact_links:
+  - name: Discussions
+    url: https://github.com/gabriel-dg/arg-trading-bot/discussions
+    about: Ideas, strategies, show-and-tell and open questions.
+  - name: Security vulnerability
+    url: https://github.com/gabriel-dg/arg-trading-bot/security/advisories/new
+    about: Report security problems privately.

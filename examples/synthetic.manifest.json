@@ -1,0 +1,8 @@
+{
+  "kind": "synthetic",
+  "currency": "ARS",
+  "price_basis": "raw_no_actions",
+  "generator": "scripts/build_demo.py",
+  "csv_sha256": "e6f78ad5762691e3d0e1f116b7d338b40215cb6a38043291e4b9d7b084e67936",
+  "description": "Empresas, precios y eventos ficticios. Solo demuestra funcionamiento; NO mide edge."
+}

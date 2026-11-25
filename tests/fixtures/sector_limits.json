@@ -1,0 +1,37 @@
+{
+  "sector_limits": {
+    "max_positions": 2,
+    "sectors": {
+      "QA0": "banks",
+      "QA1": "energy",
+      "QA2": "utilities",
+      "QA3": "materials",
+      "QA4": "other",
+      "QA5": "banks",
+      "QA6": "energy",
+      "QA7": "utilities",
+      "QA8": "materials",
+      "QA9": "other",
+      "QB0": "banks",
+      "QB1": "energy",
+      "QB2": "utilities",
+      "QB3": "materials",
+      "QB4": "other",
+      "QB5": "banks",
+      "QB6": "energy",
+      "QB7": "utilities",
+      "QB8": "materials",
+      "QB9": "other",
+      "QC0": "banks",
+      "QC1": "energy",
+      "QC2": "cedear",
+      "QC3": "cedear",
+      "QC4": "cedear",
+      "QC5": "cedear",
+      "QC6": "cedear",
+      "QC7": "cedear",
+      "QC8": "cedear",
+      "QC9": "cedear"
+    }
+  }
+}

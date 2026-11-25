@@ -1,0 +1,6 @@
+{
+  "window_scan": {
+    "full_universe": true,
+    "max_candidate_refreshes": 8
+  }
+}

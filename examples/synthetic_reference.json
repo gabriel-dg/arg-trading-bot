@@ -1,0 +1,22 @@
+{
+  "schema_version": 1,
+  "kind": "synthetic",
+  "versions": [{
+    "available_at": "2026-09-01T00:00:00-03:00",
+    "updated_on": "2026-09-01",
+    "source": "synthetic fixture; not an official exchange calendar",
+    "timezone": "America/Argentina/Buenos_Aires",
+    "valid_from": "2026-09-01",
+    "valid_to": "2027-01-31",
+    "open": "10:30:00",
+    "close": "17:00:00",
+    "holidays": ["2026-12-25", "2027-01-01"],
+    "sessions": {"2026-12-31": ["10:30:00", "13:00:00"]},
+    "universe": {
+      "DEMO_A": {"kind": "local", "group": "banks", "active_from": "2026-09-01"},
+      "DEMO_B": {"kind": "local", "group": "energy", "active_from": "2026-09-01"},
+      "DEMO_C": {"kind": "cedear", "group": "cedear", "active_from": "2026-09-01"}
+    },
+    "corporate_actions": []
+  }]
+}

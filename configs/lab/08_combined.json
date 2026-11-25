@@ -1,0 +1,13 @@
+{
+  "name": "08_combined",
+  "entry_mode": "ranked",
+  "entry_interval_min": 15,
+  "thesis_exit": true,
+  "emergency_first_touch": true,
+  "risk_per_trade": 0.01,
+  "include_unrealized_loss": true,
+  "adaptive_buy": true,
+  "sell_timeout_min": 5,
+  "event_entries": true,
+  "event_exits": true
+}
