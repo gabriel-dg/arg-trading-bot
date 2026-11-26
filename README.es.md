@@ -420,8 +420,12 @@ herramientas son `WebSearch` y `WebFetch` limitada a `allowed_domains`; cualquie
 intento de herramienta u otro modelo invalida la respuesta. La respuesta tiene que repetir
 el id del pedido y respetar el esquema (market_context de hasta 800 caracteres, cada
 summary de hasta 500, como máximo 6 sources por candidato, cada url de hasta 400
-caracteres y cada date de hasta 40); un `veto` sin una fuente en un sitio permitido pasa
-a `sin_datos`, y uno apoyado solo en páginas de `aggregator_domains` queda marcado. Una
+caracteres y cada date de hasta 40). Si algún campo supera su límite, se rechaza toda
+la respuesta del asesor de esa ventana (fail-closed: también se descartan los
+veredictos de los otros símbolos). La ventana se consume, no hay reintento, y el bot
+de trading no se ve afectado porque el asesor solo observa. Un `veto` sin una fuente
+en un sitio permitido pasa a `sin_datos`, y uno apoyado solo en páginas de
+`aggregator_domains` queda marcado. Una
 consulta fallida consume su ventana: sin reintentos ni recuperación de ventanas pasadas.
 
 **Aviso.** El contenido web y la respuesta del modelo pueden estar equivocados, viejos o

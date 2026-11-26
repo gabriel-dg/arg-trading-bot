@@ -404,8 +404,11 @@ environment without broker credentials or `ANTHROPIC_API_KEY`. Its only tools ar
 `WebSearch` and `WebFetch` limited to `allowed_domains`; any other tool attempt or another
 model rejects the answer. The answer must echo the request id and match the schema
 (market_context at most 800 characters, each summary at most 500, at most 6 sources per
-candidate, each url at most 400 characters and each date at most 40); a `veto` without a
-source on an allowed site becomes `sin_datos`, and one resting only on an
+candidate, each url at most 400 characters and each date at most 40). If any field
+exceeds its limit, the whole advisor response for that window is rejected (fail-closed:
+verdicts for the other symbols are dropped too). The window is consumed, there is no
+retry, and the trading bot is unaffected because the advisor only observes. A `veto`
+without a source on an allowed site becomes `sin_datos`, and one resting only on an
 `aggregator_domains` page is tagged. A failed call consumes its window: no retries, no
 backfill.
 
