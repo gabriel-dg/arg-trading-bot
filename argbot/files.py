@@ -1,4 +1,4 @@
-"""Short, shareable local reads for observers. No HTTP or inference retries.
+"""Short, shareable local reads and replacements for observers. No HTTP or inference retries.
 
 On Windows shared_reader opens with FILE_SHARE_READ | WRITE | DELETE, asking for no
 more than a read, and read_bytes closes the handle before parsing or waiting. While the
@@ -62,3 +62,27 @@ def read_bytes(path, *, opener=None, sleep=time.sleep):
 
 def read_json(path):
     return json.loads(read_bytes(path).decode("utf-8"))
+
+
+def atomic_text(path, text, *, sleep=time.sleep):
+    """Write a sibling temporary file, then replace. A reader holding the target open on
+    Windows can deny the replacement for a moment: only the replacement is retried."""
+    path = Path(path)
+    temporary = path.with_name(path.name + ".tmp")
+    with temporary.open("w", encoding="utf-8") as stream:
+        stream.write(text)
+        stream.flush()
+        os.fsync(stream.fileno())
+    # Retry ONLY replacement: never rerun a model or an order to repair a display.
+    for attempt in range(6):
+        try:
+            os.replace(temporary, path)
+            return
+        except OSError as exc:
+            if not access_failure(exc) or attempt == 5:
+                raise
+            sleep(.05)
+
+
+def atomic_json(path, value):
+    atomic_text(path, json.dumps(value, ensure_ascii=False, allow_nan=False, indent=2))

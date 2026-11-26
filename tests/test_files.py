@@ -53,3 +53,34 @@ def test_read_json_round_trip(tmp_path):
     path.write_text(json.dumps({"sequence": 1}), encoding="utf-8")
     assert files.read_json(path) == {"sequence": 1}
 
+
+
+def test_atomic_text_retries_only_a_denied_replacement(tmp_path, monkeypatch):
+    target = tmp_path / "latest-report.txt"
+    real_replace, attempts, sleeps = files.os.replace, [], []
+
+    def replace(source, destination):
+        attempts.append(destination)
+        if len(attempts) < 3:
+            raise PermissionError(errno.EACCES, "fixture")
+        real_replace(source, destination)
+    monkeypatch.setattr(files.os, "replace", replace)
+    files.atomic_text(target, "fresh", sleep=sleeps.append)
+    assert target.read_text(encoding="utf-8") == "fresh" and len(attempts) == 3 and sleeps == [.05, .05]
+    assert not (tmp_path / "latest-report.txt.tmp").exists()
+
+
+def test_atomic_text_does_not_hide_other_failures_and_gives_up(tmp_path, monkeypatch):
+    def broken(source, destination):
+        raise OSError(errno.EIO, "fixture")
+    monkeypatch.setattr(files.os, "replace", broken)
+    with pytest.raises(OSError):
+        files.atomic_text(tmp_path / "x.txt", "a", sleep=lambda _: pytest.fail("No retry"))
+    sleeps = []
+
+    def denied(source, destination):
+        raise PermissionError(errno.EACCES, "fixture")
+    monkeypatch.setattr(files.os, "replace", denied)
+    with pytest.raises(PermissionError):
+        files.atomic_text(tmp_path / "y.txt", "a", sleep=sleeps.append)
+    assert len(sleeps) == 5

@@ -330,6 +330,87 @@ recording its stop shows only as an unverified close (a warning). There is no so
 desktop notification; read `latest-report.txt`. It is a diagnostic aid, not a supervisor,
 and not financial advice.
 
+## Shadow advisor (optional, off by default)
+
+`argbot advisor` asks a model, through the Claude Code CLI, for a second opinion on the
+candidates of each entry window, using public information the rule does not see (company
+news, corporate events, sector and market context). It is **shadow only**: its verdicts
+(`ok`, `veto`, `sin_datos`, plus a 1 to 5 score) are recorded for later evaluation and
+never change what the bot does. It has no code path to the broker or to orders. Reports go
+to `runs/advisor/<day>/` in the repository folder (gitignored): `latest-report.txt`, one
+`HHMM.report.private.json` per window, `health.json` and one folder per model call.
+
+It needs two things, both off by default:
+
+1. The bot must record the entry batch: set `"advisor": {"capture_enabled": true}` in your
+   strategy config (see Operating keys). That alone sends nothing anywhere.
+2. The advisor itself. Install Claude Code and sign in, so `claude` is on your PATH (it runs
+   on your own Claude Code login and plan). Copy `configs/examples/advisor.example.json` to
+   `configs/local/advisor.json` and set `"enabled": true`. The other values are the reviewed
+   policy (model `claude-sonnet-5-5`, effort `medium`, `shadow_only`, at most 3 calls per
+   session, one per entry window, 300 s timeout, a batch older than 120 s is skipped,
+   `orders_enabled: false`); `allowed_domains`, `aggregator_domains` and the optional reading
+   pages (`context_url` and `symbol_url_template`, both empty by default) may be edited.
+   The entry windows are your strategy's own: at most 3, and the session must end by 18:00.
+
+Every session also needs your explicit consent: copy
+`configs/examples/advisor-authorization.example.json` to `configs/local/`, set `session` to
+the day, `real_data_approved` to `true`, an `operator_reference` of your choice, and
+`policy_sha256` to the SHA-256 of the exact policy file:
+
+```bash
+python -c "import hashlib,sys; print(hashlib.sha256(open(sys.argv[1],'rb').read()).hexdigest())" configs/local/advisor.json
+argbot advisor --state-dir state/live --config configs/local/my.json \
+  --policy configs/local/advisor.json --authorization configs/local/advisor-authorization.json
+```
+
+`--authorization` is mandatory. Start the advisor after the bot's first cycle of the day:
+it refuses to start unless the state is today's, the heartbeat is fresh and the last
+reconciliation held. It stops at 18:05 ART. Only one advisor per account runs at a time.
+`argbot advisor-demo --output <new folder>` checks the anonymous v1 contract against a
+fictional answer, with no model and no network.
+
+**What it reads.** It reads `execution-state.json` whole to verify its checksum, account
+and session, and then uses only the entry batch (`advisor_batch`), the recorded quotes
+(`quotes`) and the liveness fields (session day, status, heartbeat, last cycle, last
+reconciliation result and time). It never uses positions, cash or orders, and never opens
+the private cycle audit.
+
+**What leaves your computer.** Only when enabled and authorized, at most once per entry
+window, one prompt goes to Anthropic through the Claude Code CLI: fixed instructions, the
+list of allowed sites, a fixed description of the fields, and a JSON request with exactly
+these keys: `schema`, `mode`, `request_id`, `requested_at` and `candidates`, where each
+candidate has `symbol`, `source_at`, `mechanical_signal` (`candidate` or `not_selected`),
+`drawdown_fraction`, `day_range_fraction`, `price_to_vwap`, `spread_fraction` and, when
+the recorded quote has them as numbers, `last_price`, `previous_close`, `day_change_pct`,
+`open`, `day_high`, `day_low`, `traded_amount` and `trades`. Anything else is refused
+before the call: never the account id, credentials, quantities, positions, cash, holds,
+equity, orders, bid/ask or PnL. Your strategy thresholds are not in the prompt. The model
+may run web searches (their queries, which usually include the symbols, go to the search
+provider) and read pages, but only from the allowed sites. If you set `context_url` and
+`symbol_url_template` (both empty in the example), the prompt also names those exact https
+URLs and tells the model to fetch the day's context page and one profile page per candidate
+symbol; each host must already be in `allowed_domains`, and the template must contain
+`{symbol}` once, not in the host. When they are empty, the model is only told to pick
+allowed pages itself. The symbols you trade therefore
+become visible to Anthropic and, through the searches and the pages it reads (with `symbol_url_template`, one URL per candidate symbol on that site), to third parties. What you send is
+processed under your own terms with Anthropic. In live mode the quote fields come from
+your broker's API: check your broker's market-data terms before sending its quotes to a
+third party.
+
+**How the model is boxed in.** As with the monitor, the CLI runs from an empty temporary
+folder, with no MCP servers, settings, slash commands or saved session, and a short
+environment without broker credentials or `ANTHROPIC_API_KEY`. Its only tools are
+`WebSearch` and `WebFetch` limited to `allowed_domains`; any other tool attempt or another
+model rejects the answer. The answer must echo the request id and match the schema; a
+`veto` without a source on an allowed site becomes `sin_datos`, and one resting only on an
+`aggregator_domains` page is tagged. A failed call consumes its window: no retries, no
+backfill.
+
+**Disclaimer.** Web content and model output can be wrong, stale or manipulated. The
+verdicts are an experiment to evaluate later, not financial advice and not a trading
+signal; the bot ignores them. Each call uses your Claude Code plan.
+
 ## Going live
 
 Live mode is off unless you deliberately turn it on, and it is your responsibility.

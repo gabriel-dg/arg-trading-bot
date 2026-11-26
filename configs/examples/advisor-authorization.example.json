@@ -1,0 +1,10 @@
+{
+  "_note": "Per-session consent for the shadow advisor. Copy to configs/local/, fill every field and set real_data_approved to true only for the session you approve. policy_sha256 is the SHA-256 of the exact policy file you pass with --policy.",
+  "session": "YYYY-MM-DD",
+  "scope": "named_public_market_data_v2",
+  "real_data_approved": false,
+  "operator_reference": "",
+  "policy_sha256": "",
+  "model": "claude-sonnet-5-5",
+  "max_calls_per_session": 3
+}

@@ -75,6 +75,18 @@ def main(argv=None) -> int:
     mon.add_argument("--dry-run", action="store_true",
                      help="With --once: write the summary that would be sent and call no model")
 
+    demo = sub.add_parser("advisor-demo", help="Advisor v1 contract against a fictional answer (no model, no network)")
+    demo.add_argument("--output", type=Path, required=True, help="New folder for request, fixture and result")
+
+    adv = sub.add_parser("advisor", help="Optional shadow advisor: off by default, never sends orders, "
+                                         "sends symbols and public market data to the Claude Code CLI")
+    adv.add_argument("--state-dir", type=Path, required=True, help="Folder containing execution-state.json")
+    adv.add_argument("--config", type=Path, default=DEFAULT_CONFIG, help="The strategy config the bot runs with")
+    adv.add_argument("--policy", type=Path, default=None,
+                     help='Advisor policy with "enabled": true (default: the disabled example)')
+    adv.add_argument("--authorization", type=Path, required=True, help="Your consent file for today's session")
+    adv.add_argument("--out", type=Path, default=None, help="Report folder (default: runs/advisor/<day>, gitignored)")
+
     args = parser.parse_args(argv)
     if args.command == "paper":
         from argbot.paper_session import DEFAULT_SESSION, run_paper_session
@@ -114,6 +126,19 @@ def main(argv=None) -> int:
             else:
                 monitor.watch(args.state_dir, args.config, policy_path, out=args.out)
         except monitor.MonitorDisabled as exc:
+            print(exc, file=sys.stderr)
+            return 2
+    elif args.command == "advisor-demo":
+        from datetime import datetime, timezone
+        from argbot.agents.advisor import demo
+        demo(args.output, now=datetime.now(timezone.utc))
+        print("Advisor contract checked against a fictional answer. No inference, no data sent, no orders.")
+    elif args.command == "advisor":
+        from argbot.agents import advisor_runner
+        try:
+            advisor_runner.watch(args.state_dir, args.config, args.policy or advisor_runner.DEFAULT_POLICY,
+                                 args.authorization, out=args.out)
+        except advisor_runner.AdvisorDisabled as exc:
             print(exc, file=sys.stderr)
             return 2
     return 0

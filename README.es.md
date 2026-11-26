@@ -341,6 +341,92 @@ registrar su parada aparece solo como cierre sin verificar (advertencia). No hay
 notificación de escritorio; leé `latest-report.txt`. Es una ayuda de diagnóstico, no un
 supervisor, y no es asesoramiento financiero.
 
+## Asesor sombra (opcional, apagado por defecto)
+
+`argbot advisor` le pide a un modelo, a través de Claude Code CLI, una segunda opinión sobre
+los candidatos de cada ventana de entrada, con información pública que la regla no ve
+(noticias de la empresa, eventos corporativos, contexto del sector y del mercado). Es
+**solo sombra**: sus veredictos (`ok`, `veto`, `sin_datos`, más un puntaje de 1 a 5) se
+registran para evaluarlos después y nunca cambian lo que hace el bot. No tiene ningún
+camino de código hacia el broker ni hacia las órdenes. Los informes quedan en
+`runs/advisor/<día>/` dentro de la carpeta del repositorio (ignorada por git):
+`latest-report.txt`, un `HHMM.report.private.json` por ventana, `health.json` y una carpeta
+por cada consulta al modelo.
+
+Necesita dos cosas, las dos apagadas por defecto:
+
+1. Que el bot registre el lote de entradas: poné `"advisor": {"capture_enabled": true}` en
+   tu config de estrategia (ver Claves operativas). Eso solo no envía nada a ningún lado.
+2. El asesor en sí. Instalá Claude Code e iniciá sesión, para que `claude` esté en tu PATH
+   (usa tu propio login y plan de Claude Code). Copiá `configs/examples/advisor.example.json`
+   a `configs/local/advisor.json` y poné `"enabled": true`. El resto es la política revisada
+   (modelo `claude-sonnet-5-5`, esfuerzo `medium`, `shadow_only`, como máximo 3 consultas por
+   rueda, una por ventana de entrada, 300 s de límite, un lote de más de 120 s se saltea,
+   `orders_enabled: false`); se pueden editar `allowed_domains`, `aggregator_domains` y las
+   páginas de lectura opcionales (`context_url` y `symbol_url_template`, las dos vacías por
+   defecto). Las ventanas de entrada son las de tu estrategia: como máximo 3, y la rueda tiene
+   que terminar a las 18:00 o antes.
+
+Cada rueda además necesita tu consentimiento explícito: copiá
+`configs/examples/advisor-authorization.example.json` a `configs/local/`, poné en `session`
+el día, `real_data_approved` en `true`, un `operator_reference` a tu elección y en
+`policy_sha256` el SHA-256 del archivo de política exacto:
+
+```bash
+python -c "import hashlib,sys; print(hashlib.sha256(open(sys.argv[1],'rb').read()).hexdigest())" configs/local/advisor.json
+argbot advisor --state-dir state/live --config configs/local/mi.json \
+  --policy configs/local/advisor.json --authorization configs/local/advisor-authorization.json
+```
+
+`--authorization` es obligatorio. Arrancá el asesor después del primer ciclo del bot en el
+día: se niega a arrancar si el estado no es de hoy, si el latido no está fresco o si la
+última conciliación no dio bien. Termina a las 18:05 ART. Corre un solo asesor por cuenta a
+la vez. `argbot advisor-demo --output <carpeta nueva>` prueba el contrato anónimo v1 contra
+una respuesta ficticia, sin modelo y sin red.
+
+**Qué lee.** Lee `execution-state.json` entero para verificar su checksum, la cuenta y la
+rueda, y después usa solo el lote de entradas (`advisor_batch`), las cotizaciones
+registradas (`quotes`) y los campos de vida (día de la rueda, estado, latido, último ciclo,
+resultado y hora de la última conciliación). Nunca usa las posiciones, el efectivo ni las
+órdenes, y nunca abre la auditoría privada de ciclos.
+
+**Qué sale de tu computadora.** Solo si está prendido y autorizado, como máximo una vez por
+ventana de entrada, va un prompt a Anthropic a través de Claude Code CLI: instrucciones
+fijas, la lista de sitios permitidos, una descripción fija de los campos y un pedido JSON
+con exactamente estas claves: `schema`, `mode`, `request_id`, `requested_at` y `candidates`,
+donde cada candidato tiene `symbol`, `source_at`, `mechanical_signal` (`candidate` o
+`not_selected`), `drawdown_fraction`, `day_range_fraction`, `price_to_vwap`,
+`spread_fraction` y, si la cotización registrada los trae como números, `last_price`,
+`previous_close`, `day_change_pct`, `open`, `day_high`, `day_low`, `traded_amount` y
+`trades`. Cualquier otra cosa se rechaza antes de la consulta: nunca el id de cuenta,
+credenciales, cantidades, posiciones, efectivo, retenciones, patrimonio, órdenes, puntas ni
+resultados. Los umbrales de tu estrategia no están en el prompt. El modelo puede hacer
+búsquedas web (sus consultas, que suelen incluir los símbolos, van al proveedor de
+búsqueda) y leer páginas, pero solo de los sitios permitidos. Si definís `context_url` y
+`symbol_url_template` (las dos vacías en el ejemplo), el prompt también nombra esas URLs
+https exactas y le dice al modelo que lea la página de contexto del día y una página de
+perfil por cada candidato; cada host tiene que estar ya en `allowed_domains`, y la plantilla
+tiene que contener `{symbol}` una sola vez, no en el host. Si quedan vacías, solo se le pide
+que elija páginas de sitios permitidos. Por eso los símbolos que
+operás quedan visibles para Anthropic y, por las búsquedas y por las páginas que lee (con `symbol_url_template`, una URL por símbolo candidato en ese sitio), para terceros. Lo que envíes se
+procesa según tus propios términos con Anthropic. En modo live los campos de cotización
+vienen de la API de tu broker: revisá sus términos de datos de mercado antes de enviar sus
+cotizaciones a un tercero.
+
+**Cómo se acota al modelo.** Igual que en el monitor, la CLI corre desde una carpeta
+temporal vacía, sin servidores MCP, configuración, comandos de barra ni sesión guardada, y
+con un entorno corto sin credenciales del broker ni `ANTHROPIC_API_KEY`. Sus únicas
+herramientas son `WebSearch` y `WebFetch` limitada a `allowed_domains`; cualquier otro
+intento de herramienta u otro modelo invalida la respuesta. La respuesta tiene que repetir
+el id del pedido y respetar el esquema; un `veto` sin una fuente en un sitio permitido pasa
+a `sin_datos`, y uno apoyado solo en páginas de `aggregator_domains` queda marcado. Una
+consulta fallida consume su ventana: sin reintentos ni recuperación de ventanas pasadas.
+
+**Aviso.** El contenido web y la respuesta del modelo pueden estar equivocados, viejos o
+manipulados. Los veredictos son un experimento para evaluar después, no son asesoramiento
+financiero ni una señal de trading; el bot los ignora. Cada consulta usa tu plan de Claude
+Code.
+
 ## Pasar a live
 
 El modo live está apagado salvo que se lo encienda de manera deliberada, y la responsabilidad es de quien lo usa.
