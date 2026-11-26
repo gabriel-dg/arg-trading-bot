@@ -21,7 +21,8 @@ import time as timing
 from zoneinfo import ZoneInfo
 
 from argbot import files
-from argbot.execution import TERMINAL, instant
+from argbot.execution import instant
+from argbot.fees import fee_estimates, money
 from argbot.paper_session import load_config
 
 ART = ZoneInfo("America/Argentina/Buenos_Aires")
@@ -38,29 +39,6 @@ def read_json(path: Path | str, *, attempts: int = 5, pause: float = 0.2, sleep=
             if attempt == attempts - 1:
                 raise
             sleep(pause)
-
-
-def money(value) -> Decimal:
-    return Decimal(str(value))
-
-
-def fee_estimates(state: dict, reserve) -> dict[str, dict[str, str]]:
-    """Confirmed historic charges are indicative, not a promised future tariff."""
-    result = {}
-    for side in ("BUY", "SELL"):
-        orders = [
-            o for o in state["orders"].values()
-            if o["side"] == side and o["state"] in TERMINAL and o["filled"] and money(o["gross"]) > 0
-        ]
-        gross = sum((money(o["gross"]) for o in orders), Decimal(0))
-        rate = sum((money(o["fees"]) for o in orders), Decimal(0)) / gross if gross else money(reserve)
-        if not 0 <= rate < 1:
-            raise ValueError("Invalid observed fee rate")
-        result[side] = {
-            "rate": str(rate),
-            "basis": "confirmed_historical_charges" if gross else "configured_reserve_estimate",
-        }
-    return result
 
 
 def ars(value, *, sign: bool = False) -> str:

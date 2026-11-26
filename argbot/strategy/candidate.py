@@ -979,7 +979,7 @@ class Candidate:
             # Failure here must not discard the otherwise valid anonymous batch.
             try:
                 from argbot.agents.advisor_feed import mark
-                from argbot.watch_positions import fee_estimates
+                from argbot.fees import fee_estimates
                 self._audit('advisor_reference',window=batch['window'],captured_at=batch['captured_at'],
                     fee_estimates=fee_estimates(self.execution.state,self.config['fee_reserve']),
                     marks=[mark(r['symbol'],eligible[r['symbol']]) for r in batch['candidates']])
