@@ -43,6 +43,7 @@ durable state in `paper-run/`. Try other seeds and lengths:
 
 ```bash
 argbot paper --out paper-run-2 --days 5 --seed 42
+argbot watch-positions --state-dir paper-run --once
 argbot check-config --config configs/examples/strategy.example.json
 pytest -q                         # offline test suite
 ```
@@ -67,6 +68,7 @@ argbot/
   exchange.py      BCBA holiday calendar and helpers to count trading sessions
   sessions.py      BYMA trading days (reviewed holiday calendar)
   lab/             offline research: replay and compare profiles over CSV data
+  watch_positions.py  read-only terminal positions dashboard (local state only)
   live.py          gated live runner (IOL)
 configs/examples/  example strategy configuration and an example ticker list
 examples/          synthetic datasets for the lab
@@ -240,6 +242,24 @@ accepts entry times only up to 16:40. Costs differ too: about 0.42% per side in 
 (0.30% commission plus 0.05% market fee, plus VAT), 0.6% in the paper broker and a 0.9%
 `fee_reserve` in the example strategy. Use it to compare ideas with each other, not to
 predict what the live bot would do.
+
+## Positions dashboard (read-only)
+
+`argbot watch-positions` displays a terminal table of cash, open positions, stops,
+and daily valuation from a local `execution-state.json` file:
+
+```bash
+argbot watch-positions --state-dir paper-run --once
+argbot watch-positions --state-dir state/live --config configs/local/my.json
+```
+
+It runs only when invoked and is strictly read-only: it never writes files,
+never acquires the account lease, and never calls any broker or LLM. `--config`
+defaults to the example strategy (fine for `paper-run`); for a live or custom
+state folder, pass the same `--config` the bot ran with so the daily brake,
+winner-lock threshold and fee reserve match. Displayed prices are whatever the bot
+last recorded in that state folder (simulated prices for paper runs, not live quotes
+and not financial advice).
 
 ## Going live
 

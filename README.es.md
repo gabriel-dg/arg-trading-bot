@@ -45,6 +45,7 @@ semillas y duraciones:
 
 ```bash
 argbot paper --out paper-run-2 --days 5 --seed 42
+argbot watch-positions --state-dir paper-run --once
 argbot check-config --config configs/examples/strategy.example.json
 pytest -q                         # suite de pruebas offline
 ```
@@ -70,6 +71,7 @@ argbot/
   exchange.py      calendario de feriados de BCBA y helpers para contar ruedas
   sessions.py      días hábiles de BYMA (calendario de feriados revisado)
   lab/             investigación offline: replay y comparación de perfiles sobre datos CSV
+  watch_positions.py  tablero de posiciones en terminal, solo lectura (estado local)
   live.py          ejecutor live con habilitación explícita (IOL)
 configs/examples/  configuración de estrategia de ejemplo y una lista de tickers de ejemplo
 examples/          datasets sintéticos para el laboratorio
@@ -246,6 +248,25 @@ también difieren: alrededor de 0,42% por lado en el laboratorio (0,30% de comis
 0,05% de derechos de mercado, más IVA), 0,6% en el broker paper y un `fee_reserve` de 0,9%
 en la estrategia de ejemplo. Sirve para comparar ideas entre sí, no para predecir qué haría
 el bot live.
+
+## Tablero de posiciones (solo lectura)
+
+`argbot watch-positions` muestra en la terminal caja, posiciones abiertas, stops y
+valuación del día leyendo un archivo local `execution-state.json`:
+
+```bash
+argbot watch-positions --state-dir paper-run --once
+argbot watch-positions --state-dir state/live --config configs/local/my.json
+```
+
+Solo corre cuando se lo invoca y es estrictamente de solo lectura: nunca escribe
+archivos, nunca toma el candado de la cuenta y nunca consulta a ningún broker ni LLM.
+`--config` toma por defecto la configuración de ejemplo (sirve para `paper-run`);
+para un estado live o propio, conviene pasar el mismo `--config` con el que corrió el
+bot para que coincidan el freno diario, el lock ganador y la reserva de comisión.
+Los precios que muestra son los últimos que el bot registró en esa carpeta de estado
+(precios simulados en corridas paper, no cotizaciones reales ni asesoramiento
+financiero).
 
 ## Pasar a live
 

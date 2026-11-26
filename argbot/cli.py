@@ -57,6 +57,12 @@ def main(argv=None) -> int:
     live.add_argument("--config", type=Path, required=True)
     live.add_argument("--state-dir", type=Path, required=True)
 
+    watch = sub.add_parser("watch-positions", help="Read-only terminal dashboard for local state (no broker, no LLM)")
+    watch.add_argument("--state-dir", type=Path, required=True, help="Folder containing execution-state.json")
+    watch.add_argument("--config", type=Path, default=DEFAULT_CONFIG)
+    watch.add_argument("--once", action="store_true", help="Print once and exit")
+    watch.add_argument("--interval", type=int, default=10, help="Refresh interval in seconds (minimum 5)")
+
     args = parser.parse_args(argv)
     if args.command == "paper":
         from argbot.paper_session import DEFAULT_SESSION, run_paper_session
@@ -79,6 +85,9 @@ def main(argv=None) -> int:
     elif args.command == "live":
         from argbot.live import run_live_iol
         run_live_iol(args.config, args.state_dir)
+    elif args.command == "watch-positions":
+        from argbot.watch_positions import watch
+        watch(args.state_dir, args.config, once=args.once, interval=args.interval)
     return 0
 
 
