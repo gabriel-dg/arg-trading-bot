@@ -13,9 +13,10 @@ import pytest
 
 from argbot.agents import advisor_runner as advisor
 from argbot.agents import claude_cli
-from argbot.agents.advisor import (EGRESS_SCOPE_NAMED as EGRESS_SCOPE, PROMPT_NAMED, SCORES, demo,
-                                   prepare_named_request, prepare_request, validate_named_response,
-                                   validate_response)
+from argbot.agents.advisor import (EGRESS_SCOPE_NAMED as EGRESS_SCOPE, MARKET_CONTEXT_MAX_CHARS, PROMPT_NAMED,
+                                   SCORES, SOURCE_DATE_MAX_CHARS, SOURCE_URL_MAX_CHARS, SOURCES_MAX_ITEMS,
+                                   SUMMARY_MAX_CHARS, demo, named_prompt, prepare_named_request, prepare_request,
+                                   response_limits_text, validate_named_response, validate_response)
 from argbot.execution import ExecutionController
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -171,10 +172,19 @@ def test_the_example_authorization_cannot_be_used_as_is(tmp_path):
         advisor.authorization(ROOT / "configs/examples/advisor-authorization.example.json", NOW.date(), p, EXAMPLE_POLICY)
 
 
+# Prompt numbers outside the limits sentence: score scale, step list, 30-day horizon, 0-1 range.
+# The limits sentence is stripped here so its digits cannot mask a strategy threshold
+# (for example 0.40 -> "40"). That sentence is checked separately against the constants.
+PROMPT_DIGITS = {"0", "1", "2", "3", "4", "5", "30"}
+
+
+def prompt_without_limits(text):
+    return text.replace(response_limits_text(), "")
+
+
 def test_the_prompts_carry_no_strategy_threshold():
     text = PROMPT_NAMED + advisor.CONTEXT + advisor.SYSTEM
-    # The only numbers are the score scale, the step list, the 30-day news horizon and the 0-1 range.
-    assert "%" not in text and set(re.findall(r"\d+", text)) <= {"0", "1", "2", "3", "4", "5", "30"}
+    assert "%" not in text and set(re.findall(r"\d+", prompt_without_limits(text))) <= PROMPT_DIGITS
     assert "score entero de 1 a 5" in PROMPT_NAMED and "ordenalos entre sí" in PROMPT_NAMED
     assert "nunca la fecha en que lo leíste" in PROMPT_NAMED
     date = advisor.RESPONSE_SCHEMA["properties"]["verdicts"]["items"]["properties"]["sources"]["items"]["properties"]["date"]
@@ -209,7 +219,7 @@ def test_configured_reading_pages_enter_the_prompt(tmp_path):
     assert "reemplazá {symbol} por el ticker" in text
     assert "una página de un sitio permitido con el contexto de hoy" not in text
     assert "buscá con WebSearch sus noticias" not in text
-    assert "%" not in text and set(re.findall(r"\d+", text)) <= {"0", "1", "2", "3", "4", "5", "30"}
+    assert "%" not in text and set(re.findall(r"\d+", prompt_without_limits(text))) <= PROMPT_DIGITS
 
 
 @pytest.mark.parametrize("change", [
@@ -283,6 +293,59 @@ def test_every_verdict_carries_a_whole_score_from_1_to_5():
             validate_named_response(request, score_response(SYNA=bad), now=NOW, allowed_domains=["example.com"])
     item = advisor.RESPONSE_SCHEMA["properties"]["verdicts"]["items"]
     assert "score" in item["required"] and item["properties"]["score"]["minimum"] == min(SCORES)
+
+
+def _limit_request():
+    return dict(request_id="r1", requested_at=(NOW - timedelta(seconds=30)).isoformat(),
+                candidates=[dict(symbol="SYNA"), dict(symbol="SYNB")])
+
+
+def _limit_response(*, market_context="", syna=None, synb=None):
+    def row(symbol, **fields):
+        base = dict(symbol=symbol, verdict="ok", confidence="media", reason_code="sin_novedades",
+                    summary="", sources=[], score=3)
+        base.update(fields)
+        return base
+    return dict(request_id="r1", market_context=market_context,
+                verdicts=[row("SYNA", **(syna or {})), row("SYNB", **(synb or {}))])
+
+
+def test_response_field_limits_are_told_and_enforced():
+    request = _limit_request()
+    at_limit = _limit_response(
+        market_context="m" * MARKET_CONTEXT_MAX_CHARS,
+        syna=dict(summary="s" * SUMMARY_MAX_CHARS,
+                  sources=[dict(url="u" * SOURCE_URL_MAX_CHARS, date="d" * SOURCE_DATE_MAX_CHARS)
+                           for _ in range(SOURCES_MAX_ITEMS)]))
+    result = validate_named_response(request, at_limit, now=NOW, allowed_domains=["example.com"])
+    assert len(result["market_context"]) == MARKET_CONTEXT_MAX_CHARS
+    syna = next(r for r in result["verdicts"] if r["symbol"] == "SYNA")
+    assert len(syna["summary"]) == SUMMARY_MAX_CHARS and len(syna["sources"]) == SOURCES_MAX_ITEMS
+
+    too_long_context = _limit_response(market_context="m" * (MARKET_CONTEXT_MAX_CHARS + 1))
+    with pytest.raises(ValueError, match="market context"):
+        validate_named_response(request, too_long_context, now=NOW, allowed_domains=["example.com"])
+
+    # One over-limit field rejects the whole response, including the other symbol's valid verdict.
+    cases = [
+        dict(syna=dict(summary="s" * (SUMMARY_MAX_CHARS + 1))),
+        dict(syna=dict(sources=[dict(url="u", date="2026-01-01") for _ in range(SOURCES_MAX_ITEMS + 1)])),
+        dict(syna=dict(sources=[dict(url="u" * (SOURCE_URL_MAX_CHARS + 1), date="2026-01-01")])),
+        dict(syna=dict(sources=[dict(url="u", date="d" * (SOURCE_DATE_MAX_CHARS + 1))])),
+    ]
+    for change in cases:
+        with pytest.raises(ValueError, match="verdict"):
+            validate_named_response(request, _limit_response(**change), now=NOW, allowed_domains=["example.com"])
+
+    limits = response_limits_text()
+    assert limits in PROMPT_NAMED and limits in named_prompt(PAGES)
+    props = advisor.RESPONSE_SCHEMA["properties"]
+    item = props["verdicts"]["items"]["properties"]
+    assert props["market_context"]["maxLength"] == MARKET_CONTEXT_MAX_CHARS
+    assert item["summary"]["maxLength"] == SUMMARY_MAX_CHARS
+    assert item["sources"]["maxItems"] == SOURCES_MAX_ITEMS
+    assert item["sources"]["items"]["properties"]["url"]["maxLength"] == SOURCE_URL_MAX_CHARS
+    assert item["sources"]["items"]["properties"]["date"]["maxLength"] == SOURCE_DATE_MAX_CHARS
 
 
 # ---------------------------------------------------------------- inference with a fake CLI

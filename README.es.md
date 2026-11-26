@@ -418,7 +418,9 @@ temporal vacía, sin servidores MCP, configuración, comandos de barra ni sesió
 con un entorno corto sin credenciales del broker ni `ANTHROPIC_API_KEY`. Sus únicas
 herramientas son `WebSearch` y `WebFetch` limitada a `allowed_domains`; cualquier otro
 intento de herramienta u otro modelo invalida la respuesta. La respuesta tiene que repetir
-el id del pedido y respetar el esquema; un `veto` sin una fuente en un sitio permitido pasa
+el id del pedido y respetar el esquema (market_context de hasta 800 caracteres, cada
+summary de hasta 500, como máximo 6 sources por candidato, cada url de hasta 400
+caracteres y cada date de hasta 40); un `veto` sin una fuente en un sitio permitido pasa
 a `sin_datos`, y uno apoyado solo en páginas de `aggregator_domains` queda marcado. Una
 consulta fallida consume su ventana: sin reintentos ni recuperación de ventanas pasadas.
 

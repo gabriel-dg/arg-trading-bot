@@ -28,9 +28,10 @@ import subprocess
 import time as timing
 
 from argbot.agents import monitor as observer
-from argbot.agents.advisor import (CONFIDENCE, EGRESS_SCOPE_NAMED as EGRESS_SCOPE, SYMBOL_PLACEHOLDER,
-                                   named_prompt, PUBLIC_QUOTE_FIELDS, REASONS, VERDICTS,
-                                   prepare_named_request, validate_named_response)
+from argbot.agents.advisor import (CONFIDENCE, EGRESS_SCOPE_NAMED as EGRESS_SCOPE, MARKET_CONTEXT_MAX_CHARS,
+                                   named_prompt, PUBLIC_QUOTE_FIELDS, REASONS, SOURCE_DATE_MAX_CHARS,
+                                   SOURCE_URL_MAX_CHARS, SOURCES_MAX_ITEMS, SUMMARY_MAX_CHARS, SYMBOL_PLACEHOLDER,
+                                   VERDICTS, prepare_named_request, validate_named_response)
 from argbot.agents.claude_cli import claude_executable, claude_result, command, run_claude, write_new
 from argbot.execution import ExecutionController, instant
 from argbot.files import access_failure, atomic_json, atomic_text, read_json
@@ -43,7 +44,8 @@ DEFAULT_POLICY = ROOT / "configs/examples/advisor.example.json"
 RESPONSE_SCHEMA = {
     "type": "object", "additionalProperties": False, "required": ["request_id", "market_context", "verdicts"],
     "properties": {
-        "request_id": {"type": "string"}, "market_context": {"type": "string"},
+        "request_id": {"type": "string"},
+        "market_context": {"type": "string", "maxLength": MARKET_CONTEXT_MAX_CHARS},
         "verdicts": {"type": "array", "maxItems": 30, "items": {
             "type": "object", "additionalProperties": False,
             "required": ["symbol", "verdict", "confidence", "reason_code", "score", "summary", "sources"],
@@ -54,12 +56,14 @@ RESPONSE_SCHEMA = {
                 "score": {"type": "integer", "minimum": 1, "maximum": 5,
                           "description": "Rendimiento esperado en 5 ruedas contra el mercado: "
                                          "1 claramente peor, 3 igual, 5 claramente mejor"},
-                "summary": {"type": "string"},
-                "sources": {"type": "array", "maxItems": 6, "items": {
+                "summary": {"type": "string", "maxLength": SUMMARY_MAX_CHARS},
+                "sources": {"type": "array", "maxItems": SOURCES_MAX_ITEMS, "items": {
                     "type": "object", "additionalProperties": False, "required": ["url", "date"],
-                    "properties": {"url": {"type": "string"}, "date": {
-                        "type": "string",
-                        "description": "Fecha de publicacion de la noticia o del dato (AAAA-MM-DD), no la de lectura"}}}}}}}}}
+                    "properties": {
+                        "url": {"type": "string", "maxLength": SOURCE_URL_MAX_CHARS},
+                        "date": {
+                            "type": "string", "maxLength": SOURCE_DATE_MAX_CHARS,
+                            "description": "Fecha de publicacion de la noticia o del dato (AAAA-MM-DD), no la de lectura"}}}}}}}}}
 CONTEXT = ("Datos por candidato: drawdown_fraction es el último cierre confirmado contra el máximo "
            "del período previo que mira la estrategia; day_range_fraction es la posición del último "
            "precio en el rango del día (0 a 1); price_to_vwap es último precio / VWAP del día; "

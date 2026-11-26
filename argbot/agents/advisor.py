@@ -124,6 +124,11 @@ CONFIDENCE = ("baja", "media", "alta")
 SCORES = (1, 2, 3, 4, 5)
 REASONS = ("noticia_negativa", "noticia_positiva", "evento_corporativo", "contexto_mercado",
            "sector", "tecnico", "sin_novedades", "datos_insuficientes")
+MARKET_CONTEXT_MAX_CHARS = 800
+SUMMARY_MAX_CHARS = 500
+SOURCES_MAX_ITEMS = 6
+SOURCE_URL_MAX_CHARS = 400
+SOURCE_DATE_MAX_CHARS = 40
 # Generic on purpose: the rule's thresholds stay in your strategy config and never
 # reach the model. The four features of each candidate are described in the context.
 # When the policy sets context_url and symbol_url_template, steps (1) and (2) name those
@@ -175,12 +180,22 @@ def procedure_configured(context_url, symbol_url_template):
         f"(reemplazá {SYMBOL_PLACEHOLDER} por el ticker): trae sus noticias e información relevante con fecha; ")
 
 
+def response_limits_text():
+    """Tell the model the same field limits validate_named_response enforces."""
+    return (
+        f" Límites de la respuesta: market_context hasta {MARKET_CONTEXT_MAX_CHARS} caracteres; "
+        f"cada summary hasta {SUMMARY_MAX_CHARS} caracteres; como máximo {SOURCES_MAX_ITEMS} sources por "
+        f"candidato; cada url hasta {SOURCE_URL_MAX_CHARS} caracteres y cada date hasta "
+        f"{SOURCE_DATE_MAX_CHARS} caracteres (preferí AAAA-MM-DD)."
+    )
+
+
 def named_prompt(policy=None):
     """Assemble the named-contract prompt. Empty reading pages keep the generic steps."""
     policy = policy or {}
     context, template = policy.get("context_url") or "", policy.get("symbol_url_template") or ""
     procedure = procedure_configured(context, template) if context and template else PROCEDURE_GENERIC
-    return PROMPT_ROLE + procedure + PROCEDURE_TAIL
+    return PROMPT_ROLE + procedure + PROCEDURE_TAIL + response_limits_text()
 
 
 PROMPT_NAMED = named_prompt()
@@ -245,7 +260,7 @@ def validate_named_response(request, response, *, now, allowed_domains, aggregat
     if (not isinstance(response, dict) or set(response) != {"request_id", "market_context", "verdicts"}
             or response["request_id"] != request["request_id"]):
         raise ValueError("Advisor response binding mismatch")
-    if not isinstance(response["market_context"], str) or len(response["market_context"]) > 800:
+    if not isinstance(response["market_context"], str) or len(response["market_context"]) > MARKET_CONTEXT_MAX_CHARS:
         raise ValueError("Invalid market context")
     rows = response["verdicts"]
     expected = {c["symbol"] for c in request["candidates"]}
@@ -260,11 +275,11 @@ def validate_named_response(request, response, *, now, allowed_domains, aggregat
                 or type(row["score"]) is not int or row["score"] not in SCORES
                 or row["symbol"] not in expected or row["verdict"] not in VERDICTS
                 or row["confidence"] not in CONFIDENCE or row["reason_code"] not in REASONS
-                or not isinstance(row["summary"], str) or len(row["summary"]) > 500
-                or not isinstance(row["sources"], list) or len(row["sources"]) > 6
+                or not isinstance(row["summary"], str) or len(row["summary"]) > SUMMARY_MAX_CHARS
+                or not isinstance(row["sources"], list) or len(row["sources"]) > SOURCES_MAX_ITEMS
                 or any(not isinstance(s, dict) or set(s) != {"url", "date"}
-                       or not isinstance(s["url"], str) or len(s["url"]) > 400
-                       or not isinstance(s["date"], str) or len(s["date"]) > 40 for s in row["sources"])):
+                       or not isinstance(s["url"], str) or len(s["url"]) > SOURCE_URL_MAX_CHARS
+                       or not isinstance(s["date"], str) or len(s["date"]) > SOURCE_DATE_MAX_CHARS for s in row["sources"])):
             raise ValueError("Invalid advisor verdict")
         checked = dict(row, sources=[dict(s, allowed_site=_host(s["url"]) in allowed) for s in row["sources"]])
         if row["verdict"] == "veto" and not any(s["allowed_site"] for s in checked["sources"]):
