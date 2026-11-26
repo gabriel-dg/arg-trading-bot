@@ -228,6 +228,16 @@ def validate_config(config):
     for key in ('max_capital_pct','mec_rango_dia_max','regimen_umbral','regimen_factor','trail_stop_pct','trail_giveback_max','lock_ganador_frac'):
         if not 0 < money(rules[key]) <= 1:
             raise ValueError('Invalid strategy fraction: '+key)
+    # Optional shadow-advisor capture (off unless explicitly true; see advisor_capture()).
+    advisor = config.get('advisor')
+    if advisor is not None and (not isinstance(advisor, dict) or set(advisor) - {'capture_enabled'}
+                                or type(advisor.get('capture_enabled', False)) is not bool):
+        raise ValueError('Invalid advisor block: only a true/false capture_enabled is supported')
+
+
+def advisor_capture(config):
+    """The single opt-in for the local advisor batch; absent or false keeps it off."""
+    return (config.get('advisor') or {}).get('capture_enabled') is True
 
 
 class MechanicalRules(RuleEngine):
@@ -384,6 +394,8 @@ class Candidate:
                                 managed_data_gap_since=None, managed_book_valued=[],
                                 last_cycle_diagnostics=None,
                                 opening_equity=None, opening_equity_basis='previous_close_pending')
+            if advisor_capture(self.config):
+                self.runtime['advisor_batch'] = None
             self.runtime['opening_ledger'] = dict(cash=self.execution.state['cash'],
                 holds=str(sum((money(o['hold']) for o in self.execution.state['orders'].values()),Decimal(0))),
                 positions={s:dict(quantity=p['quantity'],cost=p['cost']) for s,p in self.execution.state['positions'].items()},
@@ -946,6 +958,56 @@ class Candidate:
         self.runtime['shortlist'] = self.rules._simbolos_a_evaluar(eligible,now)
         return eligible, decisions
 
+    # Optional shadow-advisor capture. Only with advisor.capture_enabled true: off, none
+    # of this runs, no runtime key or audit row is added and no extra checkpoint is written.
+    def _capture_advisor(self, eligible, decisions, due, *, require_candidates=False):
+        try:
+            from argbot.agents.advisor_feed import capture_batch
+            # On the exchange clock: the batch re-checks each source age against
+            # captured_at, and the advisor checks it again (0 <= captured-source).
+            batch=capture_batch(self.rules,eligible,self.runtime['shortlist'],decisions,
+                now=self.exchange.now().astimezone(ART),windows=due,
+                occupied=set(self.execution.state['positions']) | set(self._active()))
+            if require_candidates and not batch['candidates']:
+                self._audit('advisor_waiting_for_valid_candidates')
+                return
+            # Reuse the existing cycle audit. No extra file write, model call,
+            # process wait, or response-reading path in the financial cycle.
+            self._audit('advisor_batch',batch=batch)
+            self.runtime['advisor_batch'] = batch
+            # Financial benchmark stays in the local audit, OUTSIDE the batch.
+            # Failure here must not discard the otherwise valid anonymous batch.
+            try:
+                from argbot.agents.advisor_feed import mark
+                from argbot.watch_positions import fee_estimates
+                self._audit('advisor_reference',window=batch['window'],captured_at=batch['captured_at'],
+                    fee_estimates=fee_estimates(self.execution.state,self.config['fee_reserve']),
+                    marks=[mark(r['symbol'],eligible[r['symbol']]) for r in batch['candidates']])
+            except Exception as exc:
+                self._audit('advisor_reference_failed',code=type(exc).__name__)
+        except Exception as exc:
+            self.runtime['advisor_batch'] = None
+            self._audit('advisor_capture_failed',code=type(exc).__name__)
+
+    def _observe_blocked_entries(self, quotes):
+        """Fresh anonymous candidates may be observed while buying is blocked.
+
+        Never consumes a trading window or reads the advisor response. A capture
+        failure cannot affect stop management, risk, or reconciliation.
+        """
+        now = self.clock().astimezone(ART)
+        due = [w for w in self.config['entry_windows'] if time.fromisoformat(w) <= now.time()
+               and w not in self.runtime['windows']]
+        if not due or now.time() >= time.fromisoformat(self.config['entry_cutoff']):
+            return
+        try:
+            eligible, decisions = self._entry_inputs(quotes, now)
+            self._capture_advisor(eligible, decisions, due, require_candidates=True)
+            self._audit('advisor_observed_without_entry_permission', reason=self.runtime.get('entries_blocked'))
+        except Exception as exc:
+            self.runtime['advisor_batch'] = None
+            self._audit('advisor_capture_failed', code=type(exc).__name__)
+
     def _entries(self, quotes, refreshed=None):
         refreshed=refreshed if refreshed is not None else set()
         if self.runtime.get('telemetry_ok') is False:
@@ -967,7 +1029,9 @@ class Candidate:
             self._save()
             return
         eligible, decisions = self._entry_inputs(quotes, now)
-        # Durable checkpoint before any send.
+        if advisor_capture(self.config):
+            self._capture_advisor(eligible, decisions, due)
+        # Durable checkpoint before any send (it also publishes the optional batch).
         self._save()
         pending, rejections = list(decisions), 0
         while pending:
@@ -1138,6 +1202,8 @@ class Candidate:
                 if any(s in self.rows and s in self.config['universe'] and s not in priority
                        and self._fresh(q) for s,q in quotes.items()):
                     self._entries(quotes, set(priority))
+            elif advisor_capture(self.config):
+                self._observe_blocked_entries(quotes)
             if self.runtime['risk_paused']:
                 self._timeouts()
             if self.runtime.get('entries_blocked'):
@@ -1251,6 +1317,8 @@ class Candidate:
             risk_ready=self._risk(quotes)
             if risk_ready:
                 self._entries(quotes,refreshed)
+            elif advisor_capture(self.config):
+                self._observe_blocked_entries(quotes)
             if self.runtime['risk_paused']:
                 self._timeouts()  # cancel identified pending buys once
             stale = [s for s in self.execution.state['positions'] if not self._managed_fresh(quotes.get(s))]

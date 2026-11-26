@@ -148,6 +148,7 @@ Las claves de configuración están en castellano cuando vienen del vocabulario 
 | `max_scale_change_pct` | maximum scale change | Si el último precio difiere del cierre anterior en más que esto, la cotización se trata como un posible split sin ajustar. |
 | `http_session_budget` | HTTP session budget | Máximo de pedidos HTTP por sesión, incluidos lecturas, escrituras y autenticación. |
 | `http_management_reserve` | HTTP management reserve | Parte de ese presupuesto que se reserva para que los pedidos ordinarios de datos de mercado se corten antes, y quede margen para órdenes, lecturas de cuenta y cotizaciones prioritarias. |
+| `advisor.capture_enabled` | advisor capture | Opcional, apagada salvo `true`. En cada ventana de entrada el bot además escribe en su propio archivo de estado un lote para un asesor sombra opcional: los símbolos candidatos con cuatro rasgos cada uno (caída, rango del día, precio contra VWAP, spread), más los excluidos y los elegidos por la regla; sin datos de cuenta. Sin red, sin modelo y sin cambios en las órdenes. Agregar el bloque, aunque sea con `false`, cambia el hash de configuración, así que definilo al crear la carpeta de estado. |
 
 ### Claves de la estrategia
 

@@ -144,6 +144,7 @@ Config keys are in Spanish where they come from the original trading vocabulary;
 | `max_scale_change_pct` | maximum scale change | If the last price differs from the previous close by more than this, the quote is treated as a possible unadjusted split. |
 | `http_session_budget` | HTTP session budget | Maximum HTTP requests per session, including reads, writes and authentication. |
 | `http_management_reserve` | HTTP management reserve | Part of that budget held back so ordinary market-data requests stop first, leaving room for orders, account reads and priority quotes. |
+| `advisor.capture_enabled` | advisor capture | Optional, off unless `true`. At each entry window the bot also writes a batch into its own state file for an optional shadow advisor: the candidate symbols with four features each (drawdown, day range, price to VWAP, spread), plus the excluded and rule-selected symbols; no account data. No network, no model, no change to orders. Adding the block, even as `false`, changes the configuration hash, so set it when the state folder is created. |
 
 ### Strategy keys
 
