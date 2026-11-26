@@ -2,6 +2,7 @@
 from datetime import date, datetime, timedelta
 from decimal import Decimal
 import json
+from pathlib import Path
 
 import pytest
 
@@ -161,15 +162,15 @@ def test_the_viewer_never_writes_and_retries_a_locked_read(synthetic_state, tmp_
     w.render(w.collect(state_dir, cfg_path, now=NOW), color=False)
     assert {p: p.read_bytes() for p in tmp_path.rglob("*") if p.is_file()} == before
     calls, pauses = [], []
-    real = w.Path.read_text
+    real = w.files.read_bytes
 
-    def flaky(self, *args, **kwargs):
-        calls.append(self.name)
-        if self.name == "execution-state.json" and calls.count("execution-state.json") == 1:
+    def flaky(target, *args, **kwargs):
+        calls.append(Path(target).name)
+        if calls.count("execution-state.json") == 1:
             raise PermissionError("replacement in progress")
-        return real(self, *args, **kwargs)
+        return real(target, *args, **kwargs)
 
-    monkeypatch.setattr(w.Path, "read_text", flaky)
+    monkeypatch.setattr(w.files, "read_bytes", flaky)
     assert w.read_json(path, sleep=pauses.append)["state"]["cash"] == "100000" and pauses == [0.2]
 
 

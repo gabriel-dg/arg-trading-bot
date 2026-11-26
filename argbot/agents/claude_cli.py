@@ -13,7 +13,7 @@ import shutil
 import subprocess
 import tempfile
 
-from argbot.watch_positions import read_json
+from argbot.files import read_json
 
 # Claude Code runs on your own Claude Code login. Only these variables reach it:
 # an API key would bill API credits instead, and broker secrets never leave the bot.

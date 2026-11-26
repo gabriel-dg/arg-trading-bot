@@ -31,7 +31,7 @@ def enabled(tmp_path):
 def recording(tmp_path):
     now = datetime(2026, 10, 1, 11, tzinfo=m.ART)
     folder = tmp_path / "state"
-    cfg = dict(account_id=ACCOUNT, poll_seconds=300, max_quote_age_seconds=150)
+    cfg = dict(account_id=ACCOUNT, poll_seconds=300, max_quote_age_seconds=60)
     ExecutionController.prepare(folder, ACCOUNT, cash="9876543", positions={"SYNA": dict(quantity=7654, cost="876543")},
                                 fee_reserve=".01")
     path = folder / "execution-state.json"
@@ -43,7 +43,7 @@ def recording(tmp_path):
         incidents=[dict(at=now.isoformat(), code="PASSWORDVALUE", symbol="SYNA")],
         exclusions={"SYNB": "API error includes secret 12345"})
     state["last_reconciliation"] = dict(ok=True, at=now.isoformat(), reason=None)
-    state["http_budget"] = dict(used=100, total=1500, reserve=150, password_grants=1, market_data=80)
+    state["http_budget"] = dict(used=100, total=5000, reserve=500, password_grants=1, market_data=80)
     ExecutionController._write(path, state)
     return path, cfg, now
 
@@ -463,3 +463,80 @@ def test_cli_refuses_without_opt_in(tmp_path, recording, capsys):
     path, cfg, now = recording
     assert main(["monitor", "--state-dir", str(path.parent), "--config", str(write_config(tmp_path, cfg)), "--once"]) == 2
     assert "enabled" in capsys.readouterr().err
+
+
+def test_watch_exits_cleanly_on_a_day_without_session(tmp_path, recording, monkeypatch, enabled):
+    path, cfg, now = recording
+    saturday = now.replace(day=3)
+    clock_at(monkeypatch, [saturday])
+    monkeypatch.setattr(m, "snapshot", lambda *a, **kw: pytest.fail("No check on a day without session"))
+    out = tmp_path / "out"
+    m.watch(path.parent, write_config(tmp_path, cfg), enabled, out=out)
+    assert not out.exists()
+
+
+def test_watch_waits_for_the_first_cycle_without_alerts(tmp_path, recording, monkeypatch, enabled):
+    path, cfg, now = recording
+    rewrite(path, day=(now.date() - timedelta(days=1)).isoformat())
+    moments = [now, now + timedelta(minutes=1), now + timedelta(minutes=2), now.replace(hour=17, minute=6)]
+
+    def advance(_):
+        moments.pop(0)
+        if len(moments) == 2:  # the bot records today's session
+            rewrite(path, day=now.date().isoformat(), heartbeat_at=moments[0].isoformat(),
+                    last_cycle=moments[0].isoformat())
+    clock_at(monkeypatch, moments)
+    monkeypatch.setattr(m.timing, "sleep", advance)
+    seen = []
+
+    def analyze(data, folder, p):
+        seen.append(data["deterministic_signals"])
+        return dict(severity="ok", summary="Bien", findings=[], deterministic_signals=[])
+    monkeypatch.setattr(m, "analyze", analyze)
+    out = tmp_path / "out"
+    m.watch(path.parent, write_config(tmp_path, cfg), enabled, out=out)
+    assert len(seen) == 1 and not any(s["severity"] == "critical" for s in seen[0])
+    assert len(list(out.glob("*.claim.json"))) == 1 and not list(out.glob("*.failure.json"))
+    assert not (out / "alerts.jsonl").exists()
+
+
+def test_once_takes_the_read_only_lease_and_never_reuses_a_folder(tmp_path, recording):
+    from argbot.lock import AccountLease, AlreadyRunning
+    path, cfg, now = recording
+    config = write_config(tmp_path, cfg)
+    folders = {m.once(path.parent, config, out=tmp_path / "out", as_of_heartbeat=True, dry_run=True)[1] for _ in range(3)}
+    assert len(folders) == 3
+    with AccountLease("read-only-monitor:" + ACCOUNT):
+        with pytest.raises(AlreadyRunning):
+            m.once(path.parent, config, out=tmp_path / "out", as_of_heartbeat=True, dry_run=True)
+
+
+@pytest.mark.parametrize("value", ["300", 0, 300.0, None, True])
+def test_poll_seconds_must_be_a_positive_integer(tmp_path, recording, value):
+    path, cfg, now = recording
+    cfg["poll_seconds"] = value
+    with pytest.raises(ValueError, match="poll_seconds"):
+        m.bind(path.parent, write_config(tmp_path, cfg))
+
+
+def test_default_reports_go_under_the_repository_runs_folder():
+    out = m.default_out(datetime(2026, 10, 1).date())
+    assert out == m.ROOT / "runs" / "monitor" / "2026-10-01" and (m.ROOT / "pyproject.toml").is_file()
+
+
+def test_watch_reads_the_state_only_for_checks_once_the_session_is_seen(tmp_path, recording, monkeypatch, enabled):
+    path, cfg, now = recording
+    moments = [now + timedelta(seconds=5 * i) for i in range(6)] + [now.replace(hour=17, minute=6)]
+    clock_at(monkeypatch, moments)
+    reads = []
+    real = m.read
+
+    def counted(target):
+        if Path(target).name == "execution-state.json":
+            reads.append(1)
+        return real(target)
+    monkeypatch.setattr(m, "read", counted)
+    monkeypatch.setattr(m, "analyze", lambda data, folder, p: dict(severity="ok", summary="Bien", findings=[],
+                                                                  deterministic_signals=[]))
+    m.watch(path.parent, write_config(tmp_path, cfg), enabled, out=tmp_path / "out")
+    assert len(reads) == 2  # the first-session check and the one snapshot of slot 02

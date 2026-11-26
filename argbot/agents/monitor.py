@@ -24,10 +24,11 @@ from zoneinfo import ZoneInfo
 from argbot.agents.claude_cli import claude_executable, claude_result, command, run_claude, write_new
 from argbot.brokers.paper import PAPER_ACCOUNT
 from argbot.execution import ExecutionController, instant
+from argbot.files import read_json
 from argbot.lock import AccountLease, account_key
 from argbot.paper_session import load_config
+from argbot.sessions import is_trading_day
 from argbot.strategy.candidate import DEFAULT_MANAGED_QUOTE_AGE_SECONDS, session_end
-from argbot.watch_positions import read_json
 
 ART = ZoneInfo("America/Argentina/Buenos_Aires")
 ROOT = Path(__file__).resolve().parents[2]
@@ -131,6 +132,8 @@ def bind(state_dir, config_path):
     if cfg.get("account_id") is None:
         # Paper runs record the synthetic paper identity (see paper_session.py).
         cfg["account_id"] = PAPER_ACCOUNT
+    if type(cfg.get("poll_seconds")) is not int or cfg["poll_seconds"] <= 0:
+        raise ValueError("poll_seconds must be a positive integer")
     state = Path(state_dir) / "execution-state.json"
     if not state.is_file():
         raise FileNotFoundError(f"No execution-state.json in {state_dir}")
@@ -403,8 +406,26 @@ def settling_after_close(now, end=time(17)):
 
 
 def default_out(day):
-    """Reports go under runs/ (gitignored)."""
-    return Path("runs") / "monitor" / day.isoformat()
+    """Reports go under runs/ in the repository folder (gitignored), from any working folder."""
+    return ROOT / "runs" / "monitor" / day.isoformat()
+
+
+def recorded_day(state):
+    """The session the state belongs to, or None when it cannot be read (the check then fails visibly)."""
+    try:
+        return (read(state)["state"].get("strategy") or {}).get("day")
+    except (OSError, ValueError, KeyError, TypeError, AttributeError):
+        return None
+
+
+def waiting_notice(out, day):
+    """Written once while the state still holds an earlier session: no check, no alert."""
+    text = ("ARGBOT MONITOR · ESPERANDO\n"
+            f"El estado todavía no registra la rueda del {day.isoformat()}: el Monitor espera el primer "
+            "ciclo del bot. No hay chequeos ni alertas hasta entonces.\n")
+    temporary = Path(out) / "latest-report.tmp"
+    temporary.write_text(text, encoding="utf-8")
+    os.replace(temporary, Path(out) / "latest-report.txt")
 
 
 def identity_of(state, config_path, policy_path):
@@ -432,6 +453,9 @@ def watch(state_dir, config_path, policy_path=DEFAULT_POLICY, *, out=None):
     p = policy(policy_path)
     cfg, state = bind(state_dir, config_path)
     day = datetime.now(ART).date()
+    if not is_trading_day(day):
+        print(f"{day.isoformat()} is not a trading day: nothing to monitor.")
+        return
     # The observer follows the session's own end; the policy bounds it.
     observer_end = (datetime.combine(day, session_end(cfg)) + timedelta(minutes=5)).time()
     if observer_end > time.fromisoformat(p["session_end_ART"]):
@@ -446,6 +470,7 @@ def watch(state_dir, config_path, policy_path=DEFAULT_POLICY, *, out=None):
                 raise ValueError("Monitor already bound to another state/config; use another --out")
         else:
             write_new(receipt, identity)
+        waiting = started = False
         while True:
             now = datetime.now(ART)
             if now.date() != day or now.time() >= observer_end or (out / ".stop").exists():
@@ -453,6 +478,19 @@ def watch(state_dir, config_path, policy_path=DEFAULT_POLICY, *, out=None):
             if now.time() < time(10, 30) or settling_after_close(now, session_end(cfg)):
                 timing.sleep(5)
                 continue
+            # Before the bot's first cycle of the day the state still holds an earlier
+            # session. Wait without claiming a slot or alerting; a bot that never starts
+            # is not detected (start the monitor after the bot, see the README). Once
+            # today's session is seen, the state is read only by the checks.
+            if not started:
+                recorded = recorded_day(state)
+                if recorded is not None and recorded != day.isoformat():
+                    if not waiting:
+                        waiting_notice(out, day)
+                        waiting = True
+                    timing.sleep(5)
+                    continue
+                started = recorded == day.isoformat()
             slot = (now.hour * 3600 + now.minute * 60 + now.second - (10 * 3600 + 30 * 60)) // p["interval_seconds"]
             if slot >= p["max_checks_per_session"]:
                 return
@@ -492,13 +530,19 @@ def once(state_dir, config_path, policy_path=DEFAULT_POLICY, *, out=None, as_of_
     day = now.date()
     out = Path(out) if out else default_out(day)
     out.mkdir(parents=True, exist_ok=True)
-    folder = out / ("once-" + datetime.now(ART).strftime("%H%M%S") + ("-dry-run" if dry_run else ""))
-    data = snapshot(state, cfg, day, now, since=first_since(day))
-    if dry_run:
-        folder.mkdir(parents=True, exist_ok=False)
-        write_new(folder / "snapshot.json", data)
-        report = preview_report(data)
-        write_new(folder / "report.json", report)
-    else:
-        report = analyze(data, folder, p, runner=runner, executable=executable)
-    return notify(out, report), folder
+    with AccountLease("read-only-monitor:" + cfg["account_id"]):
+        # The lease keeps other monitors of this account out, so a free name stays free.
+        name = "once-" + datetime.now(ART).strftime("%H%M%S") + ("-dry-run" if dry_run else "")
+        folder, n = out / name, 1
+        while folder.exists():
+            n += 1
+            folder = out / f"{name}-{n}"
+        data = snapshot(state, cfg, day, now, since=first_since(day))
+        if dry_run:
+            folder.mkdir(parents=True, exist_ok=False)
+            write_new(folder / "snapshot.json", data)
+            report = preview_report(data)
+            write_new(folder / "report.json", report)
+        else:
+            report = analyze(data, folder, p, runner=runner, executable=executable)
+        return notify(out, report), folder

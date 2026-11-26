@@ -20,6 +20,7 @@ import sys
 import time as timing
 from zoneinfo import ZoneInfo
 
+from argbot import files
 from argbot.execution import TERMINAL, instant
 from argbot.paper_session import load_config
 
@@ -28,10 +29,11 @@ GREEN, RED, YELLOW, BOLD, RESET = "\x1b[32m", "\x1b[31m", "\x1b[33m", "\x1b[1m",
 
 
 def read_json(path: Path | str, *, attempts: int = 5, pause: float = 0.2, sleep=timing.sleep) -> dict:
-    """The bot replaces its state atomically; Windows may deny a read meanwhile."""
+    """The bot replaces its state atomically; Windows may deny a read meanwhile. The shared
+    reader keeps the handle short; a denial that outlasts its own retries is retried here."""
     for attempt in range(attempts):
         try:
-            return json.loads(Path(path).read_text(encoding="utf-8"))
+            return json.loads(files.read_bytes(path).decode("utf-8"))
         except (PermissionError, json.JSONDecodeError):
             if attempt == attempts - 1:
                 raise

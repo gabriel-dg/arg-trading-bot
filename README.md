@@ -71,6 +71,7 @@ argbot/
   lab/             offline research: replay and compare profiles over CSV data
   watch_positions.py  read-only terminal positions dashboard (local state only)
   agents/          optional technical monitor (off by default, observe-only)
+  files.py         short shared local reads for the observers
   live.py          gated live runner (IOL)
 configs/examples/  example strategy configuration and an example ticker list
 examples/          synthetic datasets for the lab
@@ -270,8 +271,9 @@ and not financial advice).
 not confirmed, unresolved orders, delayed data, HTTP budget, premature stop and others)
 and asks a model, through the Claude Code CLI, for a short technical diagnosis in Spanish.
 It never places, cancels or changes orders, never contacts the broker and never restarts
-the bot. Reports go to `runs/monitor/<day>/` (gitignored): `latest-report.txt`,
-`alerts.jsonl` for anything that is not ok, and one folder per check.
+the bot. Reports go to `runs/monitor/<day>/` in the repository folder (gitignored),
+whatever folder you run it from (with the editable install of the Quickstart):
+`latest-report.txt`, `alerts.jsonl` for anything that is not ok, and one folder per check.
 
 It is off by default. To opt in:
 
@@ -288,9 +290,14 @@ argbot monitor --state-dir state/live --config configs/local/my.json --policy co
 argbot monitor --state-dir paper-run --once --dry-run --as-of-heartbeat   # preview, no model call
 ```
 
-`--once` makes a single check now. `--as-of-heartbeat` observes a finished paper run at its
-own last heartbeat. `--dry-run` writes `snapshot.json` (exactly what would be sent) and
-calls no model; it works without opting in.
+`--once` makes a single check now. `--as-of-heartbeat` observes a finished paper run at
+its own last heartbeat. `--dry-run` writes `snapshot.json` (exactly what would be sent)
+and calls no model; it works without opting in. Only one monitor per account runs at a
+time, `--once` and `--dry-run` included.
+
+Start it after the bot has started for the day. Until the state records today's session,
+the monitor waits without checks or alerts (`latest-report.txt` says so), and on a day
+without a session it exits. So it does not detect a bot that never started.
 
 **What leaves your computer.** Only when enabled and not in `--dry-run`, each check sends
 one prompt to Anthropic through the Claude Code CLI: fixed instructions plus a technical

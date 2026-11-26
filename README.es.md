@@ -74,6 +74,7 @@ argbot/
   lab/             investigación offline: replay y comparación de perfiles sobre datos CSV
   watch_positions.py  tablero de posiciones en terminal, solo lectura (estado local)
   agents/          monitor técnico opcional (apagado por defecto, solo observa)
+  files.py         lecturas locales breves y compartidas para los observadores
   live.py          ejecutor live con habilitación explícita (IOL)
 configs/examples/  configuración de estrategia de ejemplo y una lista de tickers de ejemplo
 examples/          datasets sintéticos para el laboratorio
@@ -275,10 +276,12 @@ financiero).
 `argbot monitor` es un chequeo de salud que solo observa un bot en marcha. Lee el
 `execution-state.json` local, calcula señales deterministas (heartbeat viejo, conciliación
 sin confirmar, órdenes sin resolver, datos atrasados, presupuesto HTTP, parada anticipada
-y otras) y le pide a un modelo, mediante la CLI de Claude Code, un diagnóstico técnico breve
-en español. Nunca coloca, cancela ni modifica órdenes, nunca contacta al broker y nunca
-reinicia el bot. Los informes quedan en `runs/monitor/<día>/` (ignorado por git):
-`latest-report.txt`, `alerts.jsonl` para lo que no esté ok, y una carpeta por chequeo.
+y otras) y le pide a un modelo, mediante la CLI de Claude Code, un diagnóstico técnico
+breve en español. Nunca coloca, cancela ni modifica órdenes, nunca contacta al broker y
+nunca reinicia el bot. Los informes quedan en `runs/monitor/<día>/` dentro de la carpeta
+del repositorio (ignorado por git), desde cualquier carpeta en que lo corras (con la
+instalación editable del inicio rápido): `latest-report.txt`, `alerts.jsonl` para lo que
+no esté ok, y una carpeta por chequeo.
 
 Viene apagado. Para activarlo:
 
@@ -298,7 +301,12 @@ argbot monitor --state-dir paper-run --once --dry-run --as-of-heartbeat   # vist
 
 `--once` hace un solo chequeo ahora. `--as-of-heartbeat` observa una corrida paper ya
 terminada en su propio último heartbeat. `--dry-run` escribe `snapshot.json` (exactamente
-lo que se enviaría) y no llama a ningún modelo; funciona sin activarlo.
+lo que se enviaría) y no llama a ningún modelo; funciona sin activarlo. Corre un solo
+monitor por cuenta a la vez, incluidos `--once` y `--dry-run`.
+
+Arrancalo después de que el bot haya arrancado en el día. Mientras el estado no registre
+la rueda de hoy, el monitor espera sin chequeos ni alertas (`latest-report.txt` lo
+indica), y en un día sin rueda termina. Por eso no detecta un bot que nunca arrancó.
 
 **Qué sale de tu computadora.** Solo si está activado y no es `--dry-run`, cada chequeo
 envía un prompt a Anthropic mediante la CLI de Claude Code: instrucciones fijas más un
