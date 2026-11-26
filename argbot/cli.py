@@ -63,6 +63,18 @@ def main(argv=None) -> int:
     watch.add_argument("--once", action="store_true", help="Print once and exit")
     watch.add_argument("--interval", type=int, default=10, help="Refresh interval in seconds (minimum 5)")
 
+    mon = sub.add_parser("monitor", help="Optional technical monitor: off by default, observe-only, uses the Claude Code CLI")
+    mon.add_argument("--state-dir", type=Path, required=True, help="Folder containing execution-state.json")
+    mon.add_argument("--config", type=Path, default=DEFAULT_CONFIG, help="The strategy config the bot runs with")
+    mon.add_argument("--policy", type=Path, default=None,
+                     help='Monitor policy with "enabled": true (default: the disabled example)')
+    mon.add_argument("--out", type=Path, default=None, help="Report folder (default: runs/monitor/<day>, gitignored)")
+    mon.add_argument("--once", action="store_true", help="One check now, then exit")
+    mon.add_argument("--as-of-heartbeat", action="store_true",
+                     help="With --once: observe the state at its last heartbeat (finished paper runs)")
+    mon.add_argument("--dry-run", action="store_true",
+                     help="With --once: write the summary that would be sent and call no model")
+
     args = parser.parse_args(argv)
     if args.command == "paper":
         from argbot.paper_session import DEFAULT_SESSION, run_paper_session
@@ -88,6 +100,22 @@ def main(argv=None) -> int:
     elif args.command == "watch-positions":
         from argbot.watch_positions import watch
         watch(args.state_dir, args.config, once=args.once, interval=args.interval)
+    elif args.command == "monitor":
+        from argbot.agents import monitor
+        if (args.dry_run or args.as_of_heartbeat) and not args.once:
+            parser.error("--dry-run and --as-of-heartbeat need --once")
+        policy_path = args.policy or monitor.DEFAULT_POLICY
+        try:
+            if args.once:
+                text, folder = monitor.once(args.state_dir, args.config, policy_path, out=args.out,
+                                            as_of_heartbeat=args.as_of_heartbeat, dry_run=args.dry_run)
+                print(text)
+                print(f"\nReport folder: {folder}")
+            else:
+                monitor.watch(args.state_dir, args.config, policy_path, out=args.out)
+        except monitor.MonitorDisabled as exc:
+            print(exc, file=sys.stderr)
+            return 2
     return 0
 
 

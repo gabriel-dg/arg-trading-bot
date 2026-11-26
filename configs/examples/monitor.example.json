@@ -1,0 +1,16 @@
+{
+  "_note": "Optional technical monitor, off by default. To opt in, copy this file to configs/local/monitor.json and set enabled to true. Every other value is the reviewed policy: the monitor refuses to run if one changes.",
+  "schema": 1,
+  "enabled": false,
+  "model": "claude-sonnet-5-5",
+  "engine": "claude-code-cli",
+  "reasoning_effort": "low",
+  "interval_seconds": 900,
+  "max_checks_per_session": 31,
+  "analysis_timeout_seconds": 120,
+  "session_end_ART": "18:05",
+  "mode": "observe_only",
+  "notifications": "local_report_only",
+  "activation": "manual",
+  "egress": "technical_summary_only: no account identity, credentials, amounts, prices, quantities, symbols or PnL"
+}

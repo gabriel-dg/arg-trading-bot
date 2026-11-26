@@ -44,6 +44,7 @@ durable state in `paper-run/`. Try other seeds and lengths:
 ```bash
 argbot paper --out paper-run-2 --days 5 --seed 42
 argbot watch-positions --state-dir paper-run --once
+argbot monitor --state-dir paper-run --once --dry-run --as-of-heartbeat
 argbot check-config --config configs/examples/strategy.example.json
 pytest -q                         # offline test suite
 ```
@@ -69,6 +70,7 @@ argbot/
   sessions.py      BYMA trading days (reviewed holiday calendar)
   lab/             offline research: replay and compare profiles over CSV data
   watch_positions.py  read-only terminal positions dashboard (local state only)
+  agents/          optional technical monitor (off by default, observe-only)
   live.py          gated live runner (IOL)
 configs/examples/  example strategy configuration and an example ticker list
 examples/          synthetic datasets for the lab
@@ -261,6 +263,65 @@ winner-lock threshold and fee reserve match. Displayed prices are whatever the b
 last recorded in that state folder (simulated prices for paper runs, not live quotes
 and not financial advice).
 
+## Technical monitor (optional, off by default)
+
+`argbot monitor` is an observe-only health check for a running bot. It reads the local
+`execution-state.json`, computes deterministic signals (stale heartbeat, reconciliation
+not confirmed, unresolved orders, delayed data, HTTP budget, premature stop and others)
+and asks a model, through the Claude Code CLI, for a short technical diagnosis in Spanish.
+It never places, cancels or changes orders, never contacts the broker and never restarts
+the bot. Reports go to `runs/monitor/<day>/` (gitignored): `latest-report.txt`,
+`alerts.jsonl` for anything that is not ok, and one folder per check.
+
+It is off by default. To opt in:
+
+1. Install Claude Code and sign in, so `claude` is on your PATH. The monitor runs on your
+   own Claude Code login and plan, and its usage counts against them.
+2. Copy `configs/examples/monitor.example.json` to `configs/local/monitor.json` and set
+   `"enabled": true`. The other values are the reviewed policy (model `claude-sonnet-5-5`,
+   effort `low`, one check every 900 s from 10:30 ART, at most 31 checks, 120 s timeout,
+   `observe_only`); the monitor refuses to run if any of them changes.
+3. Run it next to the bot, with the same `--config` the bot uses:
+
+```bash
+argbot monitor --state-dir state/live --config configs/local/my.json --policy configs/local/monitor.json
+argbot monitor --state-dir paper-run --once --dry-run --as-of-heartbeat   # preview, no model call
+```
+
+`--once` makes a single check now. `--as-of-heartbeat` observes a finished paper run at its
+own last heartbeat. `--dry-run` writes `snapshot.json` (exactly what would be sent) and
+calls no model; it works without opting in.
+
+**What leaves your computer.** Only when enabled and not in `--dry-run`, each check sends
+one prompt to Anthropic through the Claude Code CLI: fixed instructions plus a technical
+summary with the observation time, session date and end, the time new incidents are
+counted from, phase, stop time, whether the close was normal and whether a scheduled stop
+was recorded, status code, heartbeat and last-cycle ages, poll interval, pause flags,
+entry-block code, ages of held quotes and of holdings valued at their live bid (without
+symbols), whether valuation is available and how long a data gap has lasted, whether cycle
+telemetry is ok, side, state and age of active orders, reconciliation result, reason code
+and age, HTTP request counters, counts of exclusion codes, incident codes with their times
+and their count, the opening flag with counts of opening incident codes, a fixed note on
+the limits of the source and the deterministic signals. It never sends the account id,
+credentials, symbols, quantities, prices, cash, equity or PnL. Free-text errors are
+replaced by a fixed list of codes (`redacted_diagnostic` otherwise). A verified normal
+close is reported without a model call. What you send is processed under your own terms
+with Anthropic.
+
+**How the model is boxed in.** The CLI runs from an empty temporary folder with no tools,
+MCP servers, settings, slash commands or saved session, and receives only a short list of
+environment variables (PATH, HOME, temporary and Windows system folders,
+`CLAUDE_CONFIG_DIR`): broker credentials and any `ANTHROPIC_API_KEY` are not passed. An
+answer is accepted only from the reviewed model, with the expected JSON shape and no tool
+use. The model cannot lower the severity of a deterministic signal, and a failed check is
+reported as critical instead of as a healthy bot.
+
+**Limits.** It reads recorded state only: it does not prove the process is alive between
+checks and does not query the broker. After the session end, a bot that died without
+recording its stop shows only as an unverified close (a warning). There is no sound or
+desktop notification; read `latest-report.txt`. It is a diagnostic aid, not a supervisor,
+and not financial advice.
+
 ## Going live
 
 Live mode is off unless you deliberately turn it on, and it is your responsibility.
@@ -293,8 +354,8 @@ The bot reconciles the account before every order and stops sending when anythin
 disagrees. Never run another tool that trades the same account at the same time.
 
 **Stops live inside the bot process.** The bot places no stop orders at the broker, and
-there is no supervisor, automatic restart or alerting (the state records a `heartbeat_at`
-time, but nothing in this project watches it). If the process, the
+there is no supervisor or automatic restart (the state records a `heartbeat_at` time; the
+optional `argbot monitor` can report a stale one, but nothing restarts the bot). If the process, the
 computer or the connection stops, open positions have no stop until the bot runs again.
 Watch it yourself.
 

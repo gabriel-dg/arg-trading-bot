@@ -46,6 +46,7 @@ semillas y duraciones:
 ```bash
 argbot paper --out paper-run-2 --days 5 --seed 42
 argbot watch-positions --state-dir paper-run --once
+argbot monitor --state-dir paper-run --once --dry-run --as-of-heartbeat
 argbot check-config --config configs/examples/strategy.example.json
 pytest -q                         # suite de pruebas offline
 ```
@@ -72,6 +73,7 @@ argbot/
   sessions.py      días hábiles de BYMA (calendario de feriados revisado)
   lab/             investigación offline: replay y comparación de perfiles sobre datos CSV
   watch_positions.py  tablero de posiciones en terminal, solo lectura (estado local)
+  agents/          monitor técnico opcional (apagado por defecto, solo observa)
   live.py          ejecutor live con habilitación explícita (IOL)
 configs/examples/  configuración de estrategia de ejemplo y una lista de tickers de ejemplo
 examples/          datasets sintéticos para el laboratorio
@@ -268,6 +270,68 @@ Los precios que muestra son los últimos que el bot registró en esa carpeta de 
 (precios simulados en corridas paper, no cotizaciones reales ni asesoramiento
 financiero).
 
+## Monitor técnico (opcional, apagado por defecto)
+
+`argbot monitor` es un chequeo de salud que solo observa un bot en marcha. Lee el
+`execution-state.json` local, calcula señales deterministas (heartbeat viejo, conciliación
+sin confirmar, órdenes sin resolver, datos atrasados, presupuesto HTTP, parada anticipada
+y otras) y le pide a un modelo, mediante la CLI de Claude Code, un diagnóstico técnico breve
+en español. Nunca coloca, cancela ni modifica órdenes, nunca contacta al broker y nunca
+reinicia el bot. Los informes quedan en `runs/monitor/<día>/` (ignorado por git):
+`latest-report.txt`, `alerts.jsonl` para lo que no esté ok, y una carpeta por chequeo.
+
+Viene apagado. Para activarlo:
+
+1. Instalá Claude Code e iniciá sesión, de modo que `claude` esté en el PATH. El monitor
+   usa tu propio login y plan de Claude Code, y su uso cuenta contra ellos.
+2. Copiá `configs/examples/monitor.example.json` a `configs/local/monitor.json` y poné
+   `"enabled": true`. El resto de los valores es la política revisada (modelo
+   `claude-sonnet-5-5`, esfuerzo `low`, un chequeo cada 900 s desde las 10:30 ART, máximo 31
+   chequeos, timeout de 120 s, `observe_only`); el monitor se niega a correr si cambia
+   alguno.
+3. Correlo junto al bot, con el mismo `--config` que usa el bot:
+
+```bash
+argbot monitor --state-dir state/live --config configs/local/my.json --policy configs/local/monitor.json
+argbot monitor --state-dir paper-run --once --dry-run --as-of-heartbeat   # vista previa, sin modelo
+```
+
+`--once` hace un solo chequeo ahora. `--as-of-heartbeat` observa una corrida paper ya
+terminada en su propio último heartbeat. `--dry-run` escribe `snapshot.json` (exactamente
+lo que se enviaría) y no llama a ningún modelo; funciona sin activarlo.
+
+**Qué sale de tu computadora.** Solo si está activado y no es `--dry-run`, cada chequeo
+envía un prompt a Anthropic mediante la CLI de Claude Code: instrucciones fijas más un
+resumen técnico con la hora de observación, fecha y fin de la rueda, la hora desde la que
+se cuentan los incidentes nuevos, fase, hora de parada, si el cierre fue normal y si quedó
+registrada una parada programada, código de estado, antigüedad del heartbeat y del último
+ciclo, intervalo de sondeo, marcas de pausa, código de bloqueo de entradas, antigüedad de
+las cotizaciones de las tenencias y de las tenencias valuadas con sus puntas vivas (sin
+símbolos), si la valuación está disponible y cuánto lleva un hueco de datos, si la
+telemetría del ciclo está bien, lado, estado y antigüedad de las órdenes activas,
+resultado, código de motivo y antigüedad de la conciliación, contadores de pedidos HTTP,
+cantidades por código de exclusión, códigos de incidentes con su hora y su cantidad, la
+marca de la apertura con las cantidades por código de sus incidentes, una nota fija sobre
+los límites de la fuente y las señales deterministas. Nunca envía el id de cuenta,
+credenciales, símbolos, cantidades, precios, efectivo, patrimonio ni resultados. Los
+errores en texto libre se reemplazan por una lista fija de códigos (`redacted_diagnostic`
+en otro caso). Un cierre normal verificado se informa sin llamar al modelo. Lo que enviás
+se procesa bajo tus propios términos con Anthropic.
+
+**Cómo se acota al modelo.** La CLI corre desde una carpeta temporal vacía, sin
+herramientas, servidores MCP, configuración, comandos de barra ni sesión guardada, y
+recibe solo una lista corta de variables de entorno (PATH, HOME, carpetas temporales y de
+sistema de Windows, `CLAUDE_CONFIG_DIR`): no recibe las credenciales del broker ni una
+`ANTHROPIC_API_KEY`. Solo se acepta una respuesta del modelo revisado, con la forma JSON
+esperada y sin uso de herramientas. El modelo no puede bajar la severidad de una señal
+determinista, y un chequeo fallido se informa como crítico en vez de como bot sano.
+
+**Límites.** Lee solo el estado registrado: no prueba que el proceso siga vivo entre
+chequeos ni consulta al broker. Después del fin de la rueda, un bot que murió sin
+registrar su parada aparece solo como cierre sin verificar (advertencia). No hay sonido ni
+notificación de escritorio; leé `latest-report.txt`. Es una ayuda de diagnóstico, no un
+supervisor, y no es asesoramiento financiero.
+
 ## Pasar a live
 
 El modo live está apagado salvo que se lo encienda de manera deliberada, y la responsabilidad es de quien lo usa.
@@ -301,8 +365,8 @@ El bot concilia la cuenta antes de cada orden y deja de enviar cuando algo
 no coincide. No hay que correr al mismo tiempo otra herramienta que opere la misma cuenta.
 
 **Los stops viven dentro del proceso del bot.** El bot no coloca órdenes stop en el broker,
-y no hay supervisor, reinicio automático ni alertas (el estado registra una hora
-`heartbeat_at`, pero nada en este proyecto la vigila). Si se detiene el proceso, la
+y no hay supervisor ni reinicio automático (el estado registra una hora `heartbeat_at`;
+el `argbot monitor` opcional puede avisar si quedó vieja, pero nada reinicia el bot). Si se detiene el proceso, la
 computadora o la conexión, las posiciones abiertas quedan sin stop hasta que el bot vuelva a
 correr. Hay que vigilarlo.
 
